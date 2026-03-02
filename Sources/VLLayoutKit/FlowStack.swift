@@ -1,124 +1,156 @@
-import VLstackNamespace
+import CoreGraphics
 import SwiftUI
+import VLstackNamespace
 
 extension VLstack
 {
  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
  public struct FlowStack: Layout
  {
-  private let alignment: Alignment
-  private let spacing: CGFloat
-
-  public init(alignment: Alignment = .center,
-              spacing: CGFloat = 10)
+  struct ElementInfo
   {
-   self.alignment = alignment
-   self.spacing = spacing
+   let view: LayoutSubviews.Element
+   let size: CGSize
+  }
+
+  public struct Row
+  {
+   var elements: [ ElementInfo ]
+   var size: CGSize
+  }
+
+  public struct Cache
+  {
+   var rows: [ Row ] = []
+   var width: CGFloat? = nil
+  }
+
+  private let horizontalAlignment: HorizontalAlignment
+  private let verticalAlignment: VerticalAlignment
+  private let horizontalSpacing: CGFloat
+  private let verticalSpacing: CGFloat
+
+  public init(horizontalAlignment: HorizontalAlignment = .center,
+              verticalAlignment: VerticalAlignment = .center,
+              horizontalSpacing: CGFloat? = nil,
+              verticalSpacing: CGFloat? = nil)
+  {
+   self.horizontalAlignment = horizontalAlignment
+   self.verticalAlignment = verticalAlignment
+   self.horizontalSpacing = horizontalSpacing ?? 8
+   self.verticalSpacing = verticalSpacing ?? 8
+  }
+
+  public init(horizontalAlignment: HorizontalAlignment = .center,
+              verticalAlignment: VerticalAlignment = .center,
+              spacing: CGFloat? = nil)
+  {
+   self.init(horizontalAlignment: horizontalAlignment,
+             verticalAlignment: verticalAlignment,
+             horizontalSpacing: spacing,
+             verticalSpacing: spacing)
+  }
+
+  public init(alignment: Alignment,
+              spacing: CGFloat? = nil)
+  {
+   self.init(horizontalAlignment: alignment.horizontal,
+             verticalAlignment: alignment.vertical,
+             horizontalSpacing: spacing,
+             verticalSpacing: spacing)
+  }
+
+  public func makeCache(subviews: Subviews) -> Cache
+  {
+   Cache()
+  }
+
+  public func updateCache(_ cache: inout Cache,
+                          subviews: Subviews,
+                          proposal: ProposedViewSize)
+  {
+   let maxWidth = proposal.width ?? .infinity
+
+   guard cache.width != proposal.width else { return }
+
+   var rows: [ Row ] = []
+   var currentElements: [ ElementInfo ] = []
+   var currentRowWidth: CGFloat = 0
+   var currentRowHeight: CGFloat = 0
+
+   for view in subviews
+   {
+    let viewSize = view.sizeThatFits(proposal)
+    let element = ElementInfo(view: view, size: viewSize)
+
+    if !currentElements.isEmpty && (currentRowWidth + horizontalSpacing + viewSize.width) > maxWidth
+    {
+     rows.append(Row(elements: currentElements,
+                     size: CGSize(width: currentRowWidth, height: currentRowHeight)))
+     currentElements = []
+     currentRowWidth = 0
+     currentRowHeight = 0
+    }
+
+    currentElements.append(element)
+    currentRowWidth += (currentElements.count == 1 ? viewSize.width : horizontalSpacing + viewSize.width)
+    currentRowHeight = max(currentRowHeight, viewSize.height)
+   }
+
+   if !currentElements.isEmpty
+   {
+    rows.append(Row(elements: currentElements,
+                    size: CGSize(width: currentRowWidth, height: currentRowHeight)))
+   }
+
+   cache.rows = rows
+   cache.width = proposal.width
   }
 
   public func sizeThatFits(proposal: ProposedViewSize,
                            subviews: Subviews,
-                           cache: inout ()) -> CGSize
+                           cache: inout Cache) -> CGSize
   {
-   let maxWidth = proposal.width ?? 0
-   var height: CGFloat = 0
-   let rows = generateRows(maxWidth, proposal, subviews)
+   updateCache(&cache, subviews: subviews, proposal: proposal)
 
-   for (index, row) in rows.enumerated()
-   {
-    if index == ( rows.count - 1 )
-    {
-     height += row.maxHeightFlowStack(proposal)
-    }
-    else
-    {
-     height += row.maxHeightFlowStack(proposal) + spacing
-    }
-   }
+   let totalVerticalSpacing: CGFloat = CGFloat(max(0, cache.rows.count - 1)) * verticalSpacing
+   let totalHeight = cache.rows.map(\.size.height).reduce(0, +) + totalVerticalSpacing
+   let totalWidth = cache.rows.map(\.size.width).max() ?? 0
 
-   return .init(width: maxWidth, height: height)
+   return CGSize(width: proposal.width ?? totalWidth, height: totalHeight)
   }
 
   public func placeSubviews(in bounds: CGRect,
                             proposal: ProposedViewSize,
                             subviews: Subviews,
-                            cache: inout ())
+                            cache: inout Cache)
   {
-   var origin = bounds.origin
-   let maxWidth = bounds.width
-   let rows = generateRows(maxWidth, proposal, subviews)
+   updateCache(&cache, subviews: subviews, proposal: proposal)
 
-   for row in rows
+   var y = bounds.minY
+
+   for row in cache.rows
    {
-    let leading: CGFloat = bounds.maxX - maxWidth
-    let trailing: CGFloat = bounds.maxX - (row.reduce(CGFloat.zero)
-                                           {
-     partialResult, view in
-     let width = view.sizeThatFits(proposal).width
-     if view == row.last
+    var x: CGFloat = switch horizontalAlignment
+    {
+     case .leading: bounds.minX
+     case .trailing: bounds.maxX - row.size.width
+     default: bounds.minX + (bounds.width - row.size.width) / 2
+    }
+
+    for element in row.elements
+    {
+     let yOffset: CGFloat = switch verticalAlignment
      {
-      return partialResult + width
+      case .top: 0
+      case .bottom: row.size.height - element.size.height
+      default: (row.size.height - element.size.height) / 2
      }
-
-     return partialResult + width + spacing
-    })
-    let center = ( trailing + leading ) / 2
-
-    origin.x = (alignment == .leading ? leading : alignment == .trailing ? trailing : center)
-
-    for view in row
-    {
-     let viewSize = view.sizeThatFits(proposal)
-     view.place(at: origin, proposal: proposal)
-     origin.x += ( viewSize.width + spacing )
+     element.view.place(at: CGPoint(x: x, y: y + yOffset), proposal: proposal)
+     x += element.size.width + horizontalSpacing
     }
-    origin.y += ( row.maxHeightFlowStack(proposal) + spacing )
+    y += row.size.height + verticalSpacing
    }
   }
-
-  internal func generateRows(_ maxWidth: CGFloat,
-                             _ proposal: ProposedViewSize,
-                             _ subviews: Subviews) -> [ [ LayoutSubviews.Element ] ]
-  {
-   var row: [ LayoutSubviews.Element ] = []
-   var rows: [ [ LayoutSubviews.Element ] ] = []
-
-   var origin = CGRect.zero.origin
-
-   for view in subviews
-   {
-    let viewSize = view.sizeThatFits(proposal)
-
-    if ( origin.x + viewSize.width + spacing ) > maxWidth
-    {
-     rows.append(row)
-     row.removeAll()
-     origin.x = 0
-     row.append(view)
-     origin.x += ( viewSize.width + spacing )
-    }
-    else
-    {
-     row.append(view)
-     origin.x += ( viewSize.width + spacing )
-    }
-   }
-
-   if !row.isEmpty
-   {
-    rows.append(row)
-    row.removeAll()
-   }
-
-   return rows
-  }
- }
-}
-
-extension [ LayoutSubviews.Element ]
-{
- internal func maxHeightFlowStack(_ proposal: ProposedViewSize) -> CGFloat
- {
-  return self.compactMap { $0.sizeThatFits(proposal).height }.max() ?? 0
  }
 }
