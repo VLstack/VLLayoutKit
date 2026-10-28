@@ -63,6 +63,7 @@ public struct VLTileGrid: Layout
 
   guard let proposedWidth = proposal.width, proposedWidth.isFinite
   else { return CGSize(width: length(of: cache.columnCount, cellSize: cache.columnWidth), height: height) }
+
   return CGSize(width: proposedWidth, height: height)
  }
 
@@ -100,40 +101,19 @@ public struct VLTileGrid: Layout
 
   guard cache.width != width else { return }
 
-  let columnCount = Self.columnCount(width: width,
-                                     columnWidthRange: columnWidthRange,
-                                     maxColumns: maxColumns,
-                                     spacing: spacing)
+  let columnCount = VLGridColumns.count(width: width,
+                                        columnWidthRange: columnWidthRange,
+                                        maxColumns: maxColumns,
+                                        spacing: spacing)
   let arrangement = Self.placements(sizes: subviews.map { $0[TileSizeKey.self] },
                                     columnCount: columnCount)
 
   cache.columnCount = columnCount
-  cache.columnWidth = width.isFinite
-   ? max(0, (width - CGFloat(columnCount - 1) * spacing) / CGFloat(columnCount))
-   : columnWidthRange.upperBound
+  cache.columnWidth = width.isFinite ? max(0, (width - CGFloat(columnCount - 1) * spacing) / CGFloat(columnCount))
+                                     : columnWidthRange.upperBound
   cache.placements = arrangement.placements
   cache.rowCount = arrangement.rowCount
   cache.width = width
- }
-
- /// Nombre de colonnes pour une largeur donnée (même logique que `LG.Layout.columns` de Logeo).
- /// Sans largeur finie : `maxColumns`, ou une seule colonne.
- static func columnCount(width: CGFloat,
-                         columnWidthRange: ClosedRange<CGFloat>,
-                         maxColumns: Int?,
-                         spacing: CGFloat) -> Int
- {
-  guard width.isFinite else { return max(1, maxColumns ?? 1) }
-  guard width > 0 else { return 1 }
-
-  let totalWidth = width + spacing
-  let minWidth = max(1, columnWidthRange.lowerBound + spacing)
-  let maxWidth = max(minWidth, columnWidthRange.upperBound + spacing)
-  let minColumns = max(1, Int(totalWidth / maxWidth))
-
-  var count = max(1, Int(totalWidth / minWidth))
-  if let maxColumns { count = min(count, maxColumns) }
-  return max(minColumns, count)
  }
 
  /// Place chaque tuile dans la première position libre, dans l'ordre de lecture.

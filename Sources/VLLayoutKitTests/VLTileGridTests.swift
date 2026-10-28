@@ -13,44 +13,6 @@ struct VLTileGridTests
   VLTileGrid.Placement(column: column, row: row, columns: columns, rows: rows)
  }
 
- private func columnCount(_ width: CGFloat, maxColumns: Int? = nil) -> Int
- {
-  VLTileGrid.columnCount(width: width, columnWidthRange: 160...320, maxColumns: maxColumns, spacing: 12)
- }
-
- // MARK: - Nombre de colonnes
-
- @Test func iPhoneWidthGivesTwoColumns()
- {
-  #expect(columnCount(358) == 2)
- }
-
- @Test func iPadWidthGivesFiveColumns()
- {
-  #expect(columnCount(1000) == 5)
- }
-
- @Test func maxColumnsLimitsCount()
- {
-  #expect(columnCount(1000, maxColumns: 3) == 3)
- }
-
- @Test func upperBoundWinsOverMaxColumns()
- {
-  #expect(columnCount(1400, maxColumns: 3) == 4)
- }
-
- @Test func zeroWidthGivesOneColumn()
- {
-  #expect(columnCount(0) == 1)
- }
-
- @Test func infiniteWidthUsesMaxColumns()
- {
-  #expect(columnCount(.infinity, maxColumns: 4) == 4)
-  #expect(columnCount(.infinity) == 1)
- }
-
  // MARK: - Placements
 
  @Test func emptyGivesNoPlacement()
