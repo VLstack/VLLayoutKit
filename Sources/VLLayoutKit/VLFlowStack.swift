@@ -1,25 +1,23 @@
 import CoreGraphics
 import SwiftUI
 
-@available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
+/// Range les vues en lignes et passe à la ligne quand la largeur manque (étiquettes, puces).
+/// Chaque vue est mesurée à sa taille idéale ; une vue plus large que le conteneur est remesurée à la largeur du conteneur.
 public struct VLFlowStack: Layout
 {
- struct ElementInfo
+ struct Row: Equatable
  {
-  let view: LayoutSubviews.Element
-  let size: CGSize
- }
-
- public struct Row
- {
-  var elements: [ ElementInfo ]
+  var indices: Range<Int>
   var size: CGSize
  }
 
+ /// Recréé par SwiftUI (implémentation par défaut de `updateCache`) quand les sous-vues changent.
  public struct Cache
  {
+  var idealSizes: [ CGSize ]? = nil
+  var maxWidth: CGFloat? = nil
+  var sizes: [ CGSize ] = []
   var rows: [ Row ] = []
-  var width: CGFloat? = nil
  }
 
  private let horizontalAlignment: HorizontalAlignment
@@ -62,59 +60,18 @@ public struct VLFlowStack: Layout
   Cache()
  }
 
- public func updateCache(_ cache: inout Cache,
-                         subviews: Subviews,
-                         proposal: ProposedViewSize)
- {
-  let maxWidth = proposal.width ?? .infinity
-
-  guard cache.width != proposal.width else { return }
-
-  var rows: [ Row ] = []
-  var currentElements: [ ElementInfo ] = []
-  var currentRowWidth: CGFloat = 0
-  var currentRowHeight: CGFloat = 0
-
-  for view in subviews
-  {
-   let viewSize = view.sizeThatFits(proposal)
-   let element = ElementInfo(view: view, size: viewSize)
-
-   if !currentElements.isEmpty && (currentRowWidth + horizontalSpacing + viewSize.width) > maxWidth
-   {
-    rows.append(Row(elements: currentElements,
-                    size: CGSize(width: currentRowWidth, height: currentRowHeight)))
-    currentElements = []
-    currentRowWidth = 0
-    currentRowHeight = 0
-   }
-
-   currentElements.append(element)
-   currentRowWidth += (currentElements.count == 1 ? viewSize.width : horizontalSpacing + viewSize.width)
-   currentRowHeight = max(currentRowHeight, viewSize.height)
-  }
-
-  if !currentElements.isEmpty
-  {
-   rows.append(Row(elements: currentElements,
-                   size: CGSize(width: currentRowWidth, height: currentRowHeight)))
-  }
-
-  cache.rows = rows
-  cache.width = proposal.width
- }
-
  public func sizeThatFits(proposal: ProposedViewSize,
                           subviews: Subviews,
                           cache: inout Cache) -> CGSize
  {
-  updateCache(&cache, subviews: subviews, proposal: proposal)
+  computeLayout(subviews: subviews, proposal: proposal, cache: &cache)
 
   let totalVerticalSpacing: CGFloat = CGFloat(max(0, cache.rows.count - 1)) * verticalSpacing
   let totalHeight = cache.rows.map(\.size.height).reduce(0, +) + totalVerticalSpacing
   let totalWidth = cache.rows.map(\.size.width).max() ?? 0
 
-  return CGSize(width: proposal.width ?? totalWidth, height: totalHeight)
+  guard let proposedWidth = proposal.width, proposedWidth.isFinite else { return CGSize(width: totalWidth, height: totalHeight) }
+  return CGSize(width: proposedWidth, height: totalHeight)
  }
 
  public func placeSubviews(in bounds: CGRect,
@@ -122,7 +79,7 @@ public struct VLFlowStack: Layout
                            subviews: Subviews,
                            cache: inout Cache)
  {
-  updateCache(&cache, subviews: subviews, proposal: proposal)
+  computeLayout(subviews: subviews, proposal: proposal, cache: &cache)
 
   var y = bounds.minY
 
@@ -135,18 +92,72 @@ public struct VLFlowStack: Layout
     default: bounds.minX + (bounds.width - row.size.width) / 2
    }
 
-   for element in row.elements
+   for index in row.indices
    {
+    let size = cache.sizes[index]
     let yOffset: CGFloat = switch verticalAlignment
     {
      case .top: 0
-     case .bottom: row.size.height - element.size.height
-     default: (row.size.height - element.size.height) / 2
+     case .bottom: row.size.height - size.height
+     default: (row.size.height - size.height) / 2
     }
-    element.view.place(at: CGPoint(x: x, y: y + yOffset), proposal: proposal)
-    x += element.size.width + horizontalSpacing
+    subviews[index].place(at: CGPoint(x: x, y: y + yOffset), proposal: ProposedViewSize(size))
+    x += size.width + horizontalSpacing
    }
    y += row.size.height + verticalSpacing
   }
+ }
+
+ /// Mesure les vues et calcule les lignes, seulement si la largeur a changé depuis le dernier calcul.
+ private func computeLayout(subviews: Subviews,
+                            proposal: ProposedViewSize,
+                            cache: inout Cache)
+ {
+  let maxWidth = proposal.width ?? .infinity
+
+  guard cache.maxWidth != maxWidth else { return }
+
+  let idealSizes = cache.idealSizes ?? subviews.map { $0.sizeThatFits(.unspecified) }
+  cache.idealSizes = idealSizes
+  cache.sizes = zip(subviews, idealSizes).map
+  { subview, idealSize in
+   idealSize.width > maxWidth ? subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil)) : idealSize
+  }
+  cache.rows = Self.rows(sizes: cache.sizes, maxWidth: maxWidth, spacing: horizontalSpacing)
+  cache.maxWidth = maxWidth
+ }
+
+ /// Répartit les tailles en lignes. Une vue plus large que `maxWidth` occupe seule sa ligne.
+ static func rows(sizes: [ CGSize ],
+                  maxWidth: CGFloat,
+                  spacing: CGFloat) -> [ Row ]
+ {
+  var rows: [ Row ] = []
+  var start = 0
+  var rowWidth: CGFloat = 0
+  var rowHeight: CGFloat = 0
+
+  for (index, size) in sizes.enumerated()
+  {
+   if index > start && rowWidth + spacing + size.width > maxWidth
+   {
+    rows.append(Row(indices: start..<index,
+                    size: CGSize(width: rowWidth, height: rowHeight)))
+    start = index
+    rowWidth = 0
+    rowHeight = 0
+   }
+
+   rowWidth += (index == start ? 0 : spacing) + size.width
+   rowHeight = max(rowHeight, size.height)
+  }
+
+  if start < sizes.count
+  {
+   rows.append(Row(indices: start..<sizes.count,
+                   size: CGSize(width: rowWidth, height: rowHeight)))
+  }
+
+  return rows
  }
 }

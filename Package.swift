@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -13,5 +13,7 @@ let package = Package(name: "VLLayoutKit",
                       ],
                       targets:
                       [
-                       .target(name: "VLLayoutKit")
+                       .target(name: "VLLayoutKit"),
+                       .testTarget(name: "VLLayoutKitTests",
+                                   dependencies: [ "VLLayoutKit" ])
                       ])
