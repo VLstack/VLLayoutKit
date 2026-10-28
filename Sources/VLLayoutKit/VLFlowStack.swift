@@ -5,11 +5,30 @@ import SwiftUI
 /// Chaque vue est mesurée à sa taille idéale ; une vue plus large que le conteneur est remesurée à la largeur du conteneur.
 public struct VLFlowStack: Layout
 {
+ /// Remplissage des lignes, sauf la dernière, qui suit toujours `horizontalAlignment`.
+ public enum Justification: CaseIterable, Sendable
+ {
+  /// Rendu naturel : chaque ligne suit `horizontalAlignment`.
+  case none
+  /// Les vues gardent leur taille ; la place libre est répartie dans les espacements.
+  case spaceBetween
+  /// Les espacements restent fixes ; la place libre est partagée à parts égales entre les vues.
+  /// Seule une vue extensible grandit : écrire par exemple `.frame(maxWidth: .infinity)` avant le fond de la puce.
+  case stretch
+ }
+
  struct Row: Equatable
  {
   var indices: Range<Int>
   var size: CGSize
   var showsIndicator = false
+ }
+
+ /// Position horizontale (depuis le bord du conteneur) et largeur d'une vue dans sa ligne.
+ struct Slot: Equatable
+ {
+  var x: CGFloat
+  var width: CGFloat
  }
 
  /// Recréé par SwiftUI (implémentation par défaut de `updateCache`) quand les sous-vues changent.
@@ -27,6 +46,7 @@ public struct VLFlowStack: Layout
  private let verticalAlignment: VerticalAlignment
  private let horizontalSpacing: CGFloat
  private let verticalSpacing: CGFloat
+ private let justification: Justification
  /// Utilisé par `VLLimitedFlowStack` : la dernière sous-vue est alors l'indicateur « +N ».
  private let lineLimit: Int?
  private let onHiddenCountChange: (@MainActor (Int) -> Void)?
@@ -35,6 +55,7 @@ public struct VLFlowStack: Layout
       verticalAlignment: VerticalAlignment,
       horizontalSpacing: CGFloat?,
       verticalSpacing: CGFloat?,
+      justification: Justification,
       lineLimit: Int?,
       onHiddenCountChange: (@MainActor (Int) -> Void)?)
  {
@@ -42,6 +63,7 @@ public struct VLFlowStack: Layout
   self.verticalAlignment = verticalAlignment
   self.horizontalSpacing = horizontalSpacing ?? 8
   self.verticalSpacing = verticalSpacing ?? 8
+  self.justification = justification
   self.lineLimit = lineLimit
   self.onHiddenCountChange = onHiddenCountChange
  }
@@ -49,33 +71,39 @@ public struct VLFlowStack: Layout
  public init(horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
              horizontalSpacing: CGFloat? = nil,
-             verticalSpacing: CGFloat? = nil)
+             verticalSpacing: CGFloat? = nil,
+             justification: Justification = .none)
  {
   self.init(horizontalAlignment: horizontalAlignment,
             verticalAlignment: verticalAlignment,
             horizontalSpacing: horizontalSpacing,
             verticalSpacing: verticalSpacing,
+            justification: justification,
             lineLimit: nil,
             onHiddenCountChange: nil)
  }
 
  public init(horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
-             spacing: CGFloat? = nil)
+             spacing: CGFloat? = nil,
+             justification: Justification = .none)
  {
   self.init(horizontalAlignment: horizontalAlignment,
             verticalAlignment: verticalAlignment,
             horizontalSpacing: spacing,
-            verticalSpacing: spacing)
+            verticalSpacing: spacing,
+            justification: justification)
  }
 
  public init(alignment: Alignment,
-             spacing: CGFloat? = nil)
+             spacing: CGFloat? = nil,
+             justification: Justification = .none)
  {
   self.init(horizontalAlignment: alignment.horizontal,
             verticalAlignment: alignment.vertical,
             horizontalSpacing: spacing,
-            verticalSpacing: spacing)
+            verticalSpacing: spacing,
+            justification: justification)
  }
 
  public func makeCache(subviews: Subviews) -> Cache
@@ -108,30 +136,31 @@ public struct VLFlowStack: Layout
   let itemCount = itemCount(of: subviews)
   var y = bounds.minY
 
-  for row in cache.rows
+  for (rowIndex, row) in cache.rows.enumerated()
   {
-   var x: CGFloat = switch horizontalAlignment
-   {
-    case .leading: bounds.minX
-    case .trailing: bounds.maxX - row.size.width
-    default: bounds.minX + (bounds.width - row.size.width) / 2
-   }
+   var indices = Array(row.indices)
+   if row.showsIndicator { indices.append(itemCount) }
+   let widths = indices.map { sizes[$0].width }
 
-   func place(_ index: Int)
+   let slots = Self.justifiedSlots(widths: widths,
+                                   availableWidth: bounds.width,
+                                   spacing: horizontalSpacing,
+                                   justification: justification,
+                                   isLastRow: rowIndex == cache.rows.count - 1)
+    ?? naturalSlots(widths: widths, rowWidth: row.size.width, availableWidth: bounds.width)
+
+   for (index, slot) in zip(indices, slots)
    {
-    let size = sizes[index]
+    let height = sizes[index].height
     let yOffset: CGFloat = switch verticalAlignment
     {
      case .top: 0
-     case .bottom: row.size.height - size.height
-     default: (row.size.height - size.height) / 2
+     case .bottom: row.size.height - height
+     default: (row.size.height - height) / 2
     }
-    subviews[index].place(at: CGPoint(x: x, y: y + yOffset), proposal: ProposedViewSize(size))
-    x += size.width + horizontalSpacing
+    subviews[index].place(at: CGPoint(x: bounds.minX + slot.x, y: y + yOffset),
+                          proposal: ProposedViewSize(width: slot.width, height: height))
    }
-
-   for index in row.indices { place(index) }
-   if row.showsIndicator { place(itemCount) }
    y += row.size.height + verticalSpacing
   }
 
@@ -155,6 +184,27 @@ public struct VLFlowStack: Layout
  private func itemCount(of subviews: Subviews) -> Int
  {
   lineLimit == nil ? subviews.count : max(0, subviews.count - 1)
+ }
+
+ /// Placement d'une ligne non justifiée, selon `horizontalAlignment`.
+ private func naturalSlots(widths: [ CGFloat ],
+                           rowWidth: CGFloat,
+                           availableWidth: CGFloat) -> [ Slot ]
+ {
+  var x: CGFloat = switch horizontalAlignment
+  {
+   case .leading: 0
+   case .trailing: availableWidth - rowWidth
+   default: (availableWidth - rowWidth) / 2
+  }
+
+  var slots: [ Slot ] = []
+  for width in widths
+  {
+   slots.append(Slot(x: x, width: width))
+   x += width + horizontalSpacing
+  }
+  return slots
  }
 
  /// Mesure les vues et calcule les lignes, seulement si la largeur a changé depuis le dernier calcul.
@@ -256,5 +306,49 @@ public struct VLFlowStack: Layout
                          size: CGSize(width: rowWidth, height: rowHeight),
                          showsIndicator: true))
   return (limitedRows, visibleEnd)
+ }
+
+ /// Placement d'une ligne justifiée, ou nil si la ligne suit `horizontalAlignment` :
+ /// pas de justification, dernière ligne, largeur infinie, pas de place libre, ou une seule vue en `.spaceBetween`.
+ static func justifiedSlots(widths: [ CGFloat ],
+                            availableWidth: CGFloat,
+                            spacing: CGFloat,
+                            justification: Justification,
+                            isLastRow: Bool) -> [ Slot ]?
+ {
+  guard justification != .none, !isLastRow, availableWidth.isFinite, !widths.isEmpty else { return nil }
+
+  let usedWidth = widths.reduce(0, +) + CGFloat(widths.count - 1) * spacing
+  let freeWidth = availableWidth - usedWidth
+
+  guard freeWidth > 0 else { return nil }
+
+  var slots: [ Slot ] = []
+  var x: CGFloat = 0
+
+  switch justification
+  {
+   case .none:
+    return nil
+
+   case .spaceBetween:
+    guard widths.count > 1 else { return nil }
+    let gap = spacing + freeWidth / CGFloat(widths.count - 1)
+    for width in widths
+    {
+     slots.append(Slot(x: x, width: width))
+     x += width + gap
+    }
+
+   case .stretch:
+    let extra = freeWidth / CGFloat(widths.count)
+    for width in widths
+    {
+     slots.append(Slot(x: x, width: width + extra))
+     x += width + extra + spacing
+    }
+  }
+
+  return slots
  }
 }

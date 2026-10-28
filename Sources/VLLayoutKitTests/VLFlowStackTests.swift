@@ -96,4 +96,58 @@ struct VLFlowStackTests
   #expect(result.rows == [ VLFlowStack.Row(indices: 0..<2, size: size(96), showsIndicator: true) ])
   #expect(result.visibleCount == 2)
  }
+
+ // MARK: - Justification
+
+ private func slots(_ widths: [ CGFloat ],
+                    _ justification: VLFlowStack.Justification,
+                    isLastRow: Bool = false,
+                    availableWidth: CGFloat = 100) -> [ VLFlowStack.Slot ]?
+ {
+  VLFlowStack.justifiedSlots(widths: widths, availableWidth: availableWidth, spacing: 8, justification: justification, isLastRow: isLastRow)
+ }
+
+ @Test func noJustificationKeepsNaturalPlacement()
+ {
+  #expect(slots([ 20, 20 ], .none) == nil)
+ }
+
+ @Test func spaceBetweenSpreadsGaps()
+ {
+  #expect(slots([ 20, 20, 20 ], .spaceBetween) == [ VLFlowStack.Slot(x: 0, width: 20),
+                                                    VLFlowStack.Slot(x: 40, width: 20),
+                                                    VLFlowStack.Slot(x: 80, width: 20) ])
+ }
+
+ @Test func stretchWidensViewsEqually()
+ {
+  #expect(slots([ 20, 30 ], .stretch) == [ VLFlowStack.Slot(x: 0, width: 41),
+                                           VLFlowStack.Slot(x: 49, width: 51) ])
+ }
+
+ @Test func lastRowIsNotJustified()
+ {
+  #expect(slots([ 20, 20 ], .stretch, isLastRow: true) == nil)
+  #expect(slots([ 20, 20 ], .spaceBetween, isLastRow: true) == nil)
+ }
+
+ @Test func singleViewSpaceBetweenFollowsAlignment()
+ {
+  #expect(slots([ 20 ], .spaceBetween) == nil)
+ }
+
+ @Test func singleViewStretchTakesFullWidth()
+ {
+  #expect(slots([ 20 ], .stretch) == [ VLFlowStack.Slot(x: 0, width: 100) ])
+ }
+
+ @Test func infiniteWidthIsNotJustified()
+ {
+  #expect(slots([ 20, 20 ], .stretch, availableWidth: .infinity) == nil)
+ }
+
+ @Test func fullRowIsNotJustified()
+ {
+  #expect(slots([ 46, 46 ], .spaceBetween) == nil)
+ }
 }

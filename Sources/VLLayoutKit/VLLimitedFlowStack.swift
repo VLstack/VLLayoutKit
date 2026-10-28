@@ -3,6 +3,7 @@ import SwiftUI
 /// VLFlowStack limité à `lineLimit` lignes : si tout ne tient pas, la dernière ligne se termine par l'indicateur `overflow`, qui reçoit le nombre de vues masquées.
 /// Les vues masquées sont retirées de VoiceOver et ne reçoivent pas les touchers ; l'indicateur doit porter un libellé d'accessibilité explicite (par exemple « 3 autres étiquettes »).
 /// Le contenu est coupé au cadre (`.clipped()`) : une ombre qui déborde est coupée aussi.
+/// La ligne de l'indicateur compte comme dernière ligne : elle n'est pas justifiée.
 public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Content: View, Overflow: View>: View
 {
  private struct Item: Identifiable
@@ -18,6 +19,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
  private let horizontalAlignment: HorizontalAlignment
  private let verticalAlignment: VerticalAlignment
  private let spacing: CGFloat?
+ private let justification: VLFlowStack.Justification
  private let content: (Data.Element) -> Content
  private let overflow: (Int) -> Overflow
 
@@ -29,6 +31,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
              horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
              spacing: CGFloat? = nil,
+             justification: VLFlowStack.Justification = .none,
              @ViewBuilder content: @escaping (Data.Element) -> Content,
              @ViewBuilder overflow: @escaping (Int) -> Overflow)
  {
@@ -38,6 +41,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
   self.horizontalAlignment = horizontalAlignment
   self.verticalAlignment = verticalAlignment
   self.spacing = spacing
+  self.justification = justification
   self.content = content
   self.overflow = overflow
  }
@@ -51,6 +55,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
               verticalAlignment: verticalAlignment,
               horizontalSpacing: spacing,
               verticalSpacing: spacing,
+              justification: justification,
               lineLimit: lineLimit,
               onHiddenCountChange: { count in if hiddenCount != count { hiddenCount = count } })
   {
@@ -75,6 +80,7 @@ public extension VLLimitedFlowStack where Data.Element: Identifiable, ID == Data
       horizontalAlignment: HorizontalAlignment = .center,
       verticalAlignment: VerticalAlignment = .center,
       spacing: CGFloat? = nil,
+      justification: VLFlowStack.Justification = .none,
       @ViewBuilder content: @escaping (Data.Element) -> Content,
       @ViewBuilder overflow: @escaping (Int) -> Overflow)
  {
@@ -84,6 +90,7 @@ public extension VLLimitedFlowStack where Data.Element: Identifiable, ID == Data
             horizontalAlignment: horizontalAlignment,
             verticalAlignment: verticalAlignment,
             spacing: spacing,
+            justification: justification,
             content: content,
             overflow: overflow)
  }

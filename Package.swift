@@ -3,6 +3,13 @@
 
 import PackageDescription
 
+let swiftSettings: [ SwiftSetting ] =
+[
+ .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+ .enableUpcomingFeature("InferIsolatedConformances"),
+ .enableUpcomingFeature("MemberImportVisibility")
+]
+
 let package = Package(name: "VLLayoutKit",
                       defaultLocalization: "en",
                       platforms: [ .iOS(.v17), .macOS(.v13) ],
@@ -13,7 +20,9 @@ let package = Package(name: "VLLayoutKit",
                       ],
                       targets:
                       [
-                       .target(name: "VLLayoutKit"),
+                       .target(name: "VLLayoutKit",
+                               swiftSettings: swiftSettings),
                        .testTarget(name: "VLLayoutKitTests",
-                                   dependencies: [ "VLLayoutKit" ])
+                                   dependencies: [ "VLLayoutKit" ],
+                                   swiftSettings: swiftSettings)
                       ])
