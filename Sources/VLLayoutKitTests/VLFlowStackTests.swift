@@ -46,4 +46,54 @@ struct VLFlowStackTests
   let rows = VLFlowStack.rows(sizes: [ size(300), size(400), size(500) ], maxWidth: .infinity, spacing: 8)
   #expect(rows == [ VLFlowStack.Row(indices: 0..<3, size: size(1216)) ])
  }
+
+ // MARK: - Limite de lignes
+
+ private func limitedRows(_ widths: [ CGFloat ], lineLimit: Int) -> (rows: [ VLFlowStack.Row ], visibleCount: Int)
+ {
+  VLFlowStack.rows(sizes: widths.map { size($0) }, maxWidth: 100, spacing: 8, lineLimit: lineLimit, indicatorSize: size(20))
+ }
+
+ @Test func allFitWithoutIndicator()
+ {
+  let result = limitedRows([ 30, 30 ], lineLimit: 1)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<2, size: size(68)) ])
+  #expect(result.visibleCount == 2)
+ }
+
+ @Test func indicatorTakesRoomOnLastLine()
+ {
+  let result = limitedRows([ 30, 30, 30 ], lineLimit: 1)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<2, size: size(96), showsIndicator: true) ])
+  #expect(result.visibleCount == 2)
+ }
+
+ @Test func indicatorReplacesLastViewWhenNeeded()
+ {
+  let result = limitedRows([ 40, 40, 40 ], lineLimit: 1)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<1, size: size(68), showsIndicator: true) ])
+  #expect(result.visibleCount == 1)
+ }
+
+ @Test func indicatorAloneOnLastLine()
+ {
+  let result = limitedRows([ 95, 95 ], lineLimit: 1)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<0, size: size(20), showsIndicator: true) ])
+  #expect(result.visibleCount == 0)
+ }
+
+ @Test func firstLinesKeptBeforeLastLine()
+ {
+  let result = limitedRows([ 60, 60, 60, 60 ], lineLimit: 2)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<1, size: size(60)),
+                           VLFlowStack.Row(indices: 1..<2, size: size(88), showsIndicator: true) ])
+  #expect(result.visibleCount == 2)
+ }
+
+ @Test func lineLimitBelowOneActsAsOne()
+ {
+  let result = limitedRows([ 30, 30, 30 ], lineLimit: 0)
+  #expect(result.rows == [ VLFlowStack.Row(indices: 0..<2, size: size(96), showsIndicator: true) ])
+  #expect(result.visibleCount == 2)
+ }
 }

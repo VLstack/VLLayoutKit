@@ -9,6 +9,7 @@ public struct VLFlowStack: Layout
  {
   var indices: Range<Int>
   var size: CGSize
+  var showsIndicator = false
  }
 
  /// Recréé par SwiftUI (implémentation par défaut de `updateCache`) quand les sous-vues changent.
@@ -18,22 +19,44 @@ public struct VLFlowStack: Layout
   var maxWidth: CGFloat? = nil
   var sizes: [ CGSize ] = []
   var rows: [ Row ] = []
+  var visibleCount = 0
+  var reportedHiddenCount: Int? = nil
  }
 
  private let horizontalAlignment: HorizontalAlignment
  private let verticalAlignment: VerticalAlignment
  private let horizontalSpacing: CGFloat
  private let verticalSpacing: CGFloat
+ /// Utilisé par `VLLimitedFlowStack` : la dernière sous-vue est alors l'indicateur « +N ».
+ private let lineLimit: Int?
+ private let onHiddenCountChange: (@MainActor (Int) -> Void)?
+
+ init(horizontalAlignment: HorizontalAlignment,
+      verticalAlignment: VerticalAlignment,
+      horizontalSpacing: CGFloat?,
+      verticalSpacing: CGFloat?,
+      lineLimit: Int?,
+      onHiddenCountChange: (@MainActor (Int) -> Void)?)
+ {
+  self.horizontalAlignment = horizontalAlignment
+  self.verticalAlignment = verticalAlignment
+  self.horizontalSpacing = horizontalSpacing ?? 8
+  self.verticalSpacing = verticalSpacing ?? 8
+  self.lineLimit = lineLimit
+  self.onHiddenCountChange = onHiddenCountChange
+ }
 
  public init(horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
              horizontalSpacing: CGFloat? = nil,
              verticalSpacing: CGFloat? = nil)
  {
-  self.horizontalAlignment = horizontalAlignment
-  self.verticalAlignment = verticalAlignment
-  self.horizontalSpacing = horizontalSpacing ?? 8
-  self.verticalSpacing = verticalSpacing ?? 8
+  self.init(horizontalAlignment: horizontalAlignment,
+            verticalAlignment: verticalAlignment,
+            horizontalSpacing: horizontalSpacing,
+            verticalSpacing: verticalSpacing,
+            lineLimit: nil,
+            onHiddenCountChange: nil)
  }
 
  public init(horizontalAlignment: HorizontalAlignment = .center,
@@ -81,6 +104,8 @@ public struct VLFlowStack: Layout
  {
   computeLayout(subviews: subviews, proposal: proposal, cache: &cache)
 
+  let sizes = cache.sizes
+  let itemCount = itemCount(of: subviews)
   var y = bounds.minY
 
   for row in cache.rows
@@ -92,9 +117,9 @@ public struct VLFlowStack: Layout
     default: bounds.minX + (bounds.width - row.size.width) / 2
    }
 
-   for index in row.indices
+   func place(_ index: Int)
    {
-    let size = cache.sizes[index]
+    let size = sizes[index]
     let yOffset: CGFloat = switch verticalAlignment
     {
      case .top: 0
@@ -104,8 +129,32 @@ public struct VLFlowStack: Layout
     subviews[index].place(at: CGPoint(x: x, y: y + yOffset), proposal: ProposedViewSize(size))
     x += size.width + horizontalSpacing
    }
+
+   for index in row.indices { place(index) }
+   if row.showsIndicator { place(itemCount) }
    y += row.size.height + verticalSpacing
   }
+
+  // Vues masquées : sous le cadre, coupées par VLLimitedFlowStack (un Layout ne peut pas cacher une vue)
+  var hiddenIndices = Array(cache.visibleCount..<itemCount)
+  if itemCount < subviews.count && cache.rows.last?.showsIndicator != true { hiddenIndices.append(itemCount) }
+  for index in hiddenIndices
+  {
+   subviews[index].place(at: CGPoint(x: bounds.minX, y: bounds.maxY + 1), proposal: .zero)
+  }
+
+  let hiddenCount = itemCount - cache.visibleCount
+  if let onHiddenCountChange, cache.reportedHiddenCount != hiddenCount
+  {
+   cache.reportedHiddenCount = hiddenCount
+   Task { @MainActor in onHiddenCountChange(hiddenCount) }
+  }
+ }
+
+ /// Nombre de vues hors indicateur.
+ private func itemCount(of subviews: Subviews) -> Int
+ {
+  lineLimit == nil ? subviews.count : max(0, subviews.count - 1)
  }
 
  /// Mesure les vues et calcule les lignes, seulement si la largeur a changé depuis le dernier calcul.
@@ -123,7 +172,23 @@ public struct VLFlowStack: Layout
   { subview, idealSize in
    idealSize.width > maxWidth ? subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil)) : idealSize
   }
-  cache.rows = Self.rows(sizes: cache.sizes, maxWidth: maxWidth, spacing: horizontalSpacing)
+
+  let itemCount = itemCount(of: subviews)
+  if let lineLimit, itemCount < subviews.count
+  {
+   let result = Self.rows(sizes: Array(cache.sizes.prefix(itemCount)),
+                          maxWidth: maxWidth,
+                          spacing: horizontalSpacing,
+                          lineLimit: lineLimit,
+                          indicatorSize: cache.sizes[itemCount])
+   cache.rows = result.rows
+   cache.visibleCount = result.visibleCount
+  }
+  else
+  {
+   cache.rows = Self.rows(sizes: cache.sizes, maxWidth: maxWidth, spacing: horizontalSpacing)
+   cache.visibleCount = cache.sizes.count
+  }
   cache.maxWidth = maxWidth
  }
 
@@ -159,5 +224,37 @@ public struct VLFlowStack: Layout
   }
 
   return rows
+ }
+
+ /// Comme `rows(sizes:maxWidth:spacing:)`, sur au plus `lineLimit` lignes (1 au minimum).
+ /// Si tout ne tient pas, la dernière ligne garde la place de l'indicateur, placé après ses vues.
+ static func rows(sizes: [ CGSize ],
+                  maxWidth: CGFloat,
+                  spacing: CGFloat,
+                  lineLimit: Int,
+                  indicatorSize: CGSize) -> (rows: [ Row ], visibleCount: Int)
+ {
+  let allRows = Self.rows(sizes: sizes, maxWidth: maxWidth, spacing: spacing)
+  let lineLimit = max(1, lineLimit)
+
+  guard allRows.count > lineLimit else { return (allRows, sizes.count) }
+
+  var limitedRows = Array(allRows.prefix(lineLimit - 1))
+  let lastRow = allRows[lineLimit - 1]
+  var visibleEnd = lastRow.indices.lowerBound
+  var rowWidth = indicatorSize.width
+  var rowHeight = indicatorSize.height
+
+  while visibleEnd < lastRow.indices.upperBound && rowWidth + spacing + sizes[visibleEnd].width <= maxWidth
+  {
+   rowWidth += spacing + sizes[visibleEnd].width
+   rowHeight = max(rowHeight, sizes[visibleEnd].height)
+   visibleEnd += 1
+  }
+
+  limitedRows.append(Row(indices: lastRow.indices.lowerBound..<visibleEnd,
+                         size: CGSize(width: rowWidth, height: rowHeight),
+                         showsIndicator: true))
+  return (limitedRows, visibleEnd)
  }
 }
