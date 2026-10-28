@@ -5,18 +5,6 @@ import SwiftUI
 /// Chaque vue est mesurée à sa taille idéale ; une vue plus large que le conteneur est remesurée à la largeur du conteneur.
 public struct VLFlowStack: Layout
 {
- /// Remplissage des lignes, sauf la dernière, qui suit toujours `horizontalAlignment`.
- public enum Justification: CaseIterable, Sendable
- {
-  /// Rendu naturel : chaque ligne suit `horizontalAlignment`.
-  case none
-  /// Les vues gardent leur taille ; la place libre est répartie dans les espacements.
-  case spaceBetween
-  /// Les espacements restent fixes ; la place libre est partagée à parts égales entre les vues.
-  /// Seule une vue extensible grandit : écrire par exemple `.frame(maxWidth: .infinity)` avant le fond de la puce.
-  case stretch
- }
-
  struct Row: Equatable
  {
   var indices: Range<Int>
@@ -46,7 +34,8 @@ public struct VLFlowStack: Layout
  private let verticalAlignment: VerticalAlignment
  private let horizontalSpacing: CGFloat
  private let verticalSpacing: CGFloat
- private let justification: Justification
+ /// Remplissage des lignes, sauf la dernière, qui suit toujours `horizontalAlignment`.
+ private let justification: VLJustification
  /// Utilisé par `VLLimitedFlowStack` : la dernière sous-vue est alors l'indicateur « +N ».
  private let lineLimit: Int?
  private let onHiddenCountChange: (@MainActor (Int) -> Void)?
@@ -55,7 +44,7 @@ public struct VLFlowStack: Layout
       verticalAlignment: VerticalAlignment,
       horizontalSpacing: CGFloat?,
       verticalSpacing: CGFloat?,
-      justification: Justification,
+      justification: VLJustification,
       lineLimit: Int?,
       onHiddenCountChange: (@MainActor (Int) -> Void)?)
  {
@@ -72,7 +61,7 @@ public struct VLFlowStack: Layout
              verticalAlignment: VerticalAlignment = .center,
              horizontalSpacing: CGFloat? = nil,
              verticalSpacing: CGFloat? = nil,
-             justification: Justification = .none)
+             justification: VLJustification = .none)
  {
   self.init(horizontalAlignment: horizontalAlignment,
             verticalAlignment: verticalAlignment,
@@ -86,7 +75,7 @@ public struct VLFlowStack: Layout
  public init(horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
              spacing: CGFloat? = nil,
-             justification: Justification = .none)
+             justification: VLJustification = .none)
  {
   self.init(horizontalAlignment: horizontalAlignment,
             verticalAlignment: verticalAlignment,
@@ -97,7 +86,7 @@ public struct VLFlowStack: Layout
 
  public init(alignment: Alignment,
              spacing: CGFloat? = nil,
-             justification: Justification = .none)
+             justification: VLJustification = .none)
  {
   self.init(horizontalAlignment: alignment.horizontal,
             verticalAlignment: alignment.vertical,
@@ -310,10 +299,11 @@ public struct VLFlowStack: Layout
 
  /// Placement d'une ligne justifiée, ou nil si la ligne suit `horizontalAlignment` :
  /// pas de justification, dernière ligne, largeur infinie, pas de place libre, ou une seule vue en `.spaceBetween`.
+ /// Utilisé aussi par VLAdaptiveStack pour sa ligne unique (`isLastRow: false`).
  static func justifiedSlots(widths: [ CGFloat ],
                             availableWidth: CGFloat,
                             spacing: CGFloat,
-                            justification: Justification,
+                            justification: VLJustification,
                             isLastRow: Bool) -> [ Slot ]?
  {
   guard justification != .none, !isLastRow, availableWidth.isFinite, !widths.isEmpty else { return nil }

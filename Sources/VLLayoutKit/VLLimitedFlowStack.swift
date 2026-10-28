@@ -19,7 +19,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
  private let horizontalAlignment: HorizontalAlignment
  private let verticalAlignment: VerticalAlignment
  private let spacing: CGFloat?
- private let justification: VLFlowStack.Justification
+ private let justification: VLJustification
  private let content: (Data.Element) -> Content
  private let overflow: (Int) -> Overflow
 
@@ -31,7 +31,7 @@ public struct VLLimitedFlowStack<Data: RandomAccessCollection, ID: Hashable, Con
              horizontalAlignment: HorizontalAlignment = .center,
              verticalAlignment: VerticalAlignment = .center,
              spacing: CGFloat? = nil,
-             justification: VLFlowStack.Justification = .none,
+             justification: VLJustification = .none,
              @ViewBuilder content: @escaping (Data.Element) -> Content,
              @ViewBuilder overflow: @escaping (Int) -> Overflow)
  {
@@ -80,7 +80,7 @@ public extension VLLimitedFlowStack where Data.Element: Identifiable, ID == Data
       horizontalAlignment: HorizontalAlignment = .center,
       verticalAlignment: VerticalAlignment = .center,
       spacing: CGFloat? = nil,
-      justification: VLFlowStack.Justification = .none,
+      justification: VLJustification = .none,
       @ViewBuilder content: @escaping (Data.Element) -> Content,
       @ViewBuilder overflow: @escaping (Int) -> Overflow)
  {

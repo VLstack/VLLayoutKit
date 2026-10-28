@@ -100,7 +100,7 @@ struct VLFlowStackTests
  // MARK: - Justification
 
  private func slots(_ widths: [ CGFloat ],
-                    _ justification: VLFlowStack.Justification,
+                    _ justification: VLJustification,
                     isLastRow: Bool = false,
                     availableWidth: CGFloat = 100) -> [ VLFlowStack.Slot ]?
  {
